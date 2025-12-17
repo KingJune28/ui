@@ -16,6 +16,7 @@ import {
   detectPackageManagerFromInvocation,
   installDependencies,
   getRunCommand,
+  getExecCommand,
   type PackageManager,
 } from '../utils/package-manager.js';
 
@@ -30,6 +31,9 @@ interface InitOptions {
   pnpm?: boolean;
   bun?: boolean;
   skipInstall?: boolean;
+  bundleIdentifier?: string;
+  runPrebuild?: boolean;
+  git?: boolean;
 }
 
 export async function initCommand(
@@ -38,7 +42,7 @@ export async function initCommand(
 ) {
   // Show the banner first
   logger.banner();
-  logger.header('🚀 Welcome to BNA - Expo React Native Starter');
+  logger.header('🚀 Welcome to Kynjal - Expo React Native Starter');
 
   try {
     // Get project name
@@ -51,7 +55,7 @@ export async function initCommand(
           type: 'input',
           name: 'projectName',
           message: 'What is your project name?',
-          default: 'bna-app',
+          default: 'kynjal-app',
           validate: (input: string) => {
             if (input === '.') {
               return true; // Allow current directory
@@ -62,8 +66,38 @@ export async function initCommand(
             );
           },
         },
+        {
+          type: 'input',
+          name: 'bundleIdentifier',
+          message: 'What is your bundle identifier?',
+          default: (answers: any) => {
+            const name = sanitizeProjectName(answers.projectName || 'kynjal-app');
+            return `com.kynjal.${name}`;
+          },
+          validate: (input: string) => {
+            if (/^[a-zA-Z0-9._-]+$/.test(input)) {
+              return true;
+            }
+            return 'Invalid bundle identifier. Use alphanumeric characters, dots, hyphens, or underscores.';
+          },
+        },
+        {
+          type: 'confirm',
+          name: 'runPrebuild',
+          message: 'Do you want to run prebuild? (Generates native directories)',
+          default: false,
+        },
+        {
+          type: 'confirm',
+          name: 'git',
+          message: 'Do you want to initialize a git repository?',
+          default: true,
+        },
       ]);
       finalProjectName = answers.projectName;
+      options.bundleIdentifier = answers.bundleIdentifier;
+      options.runPrebuild = answers.runPrebuild;
+      options.git = answers.git;
     }
 
     // Check if user wants to use current directory
@@ -71,7 +105,6 @@ export async function initCommand(
       useCurrentDirectory = true;
       const currentDirName = path.basename(process.cwd());
 
-      // Validate current directory name as project name
       const nameValidation = validateProjectName(currentDirName);
       if (!nameValidation.valid) {
         logger.error(
@@ -79,13 +112,12 @@ export async function initCommand(
         );
         logger.error(nameValidation.message!);
 
-        // Ask for a different project name
         const answers = await inquirer.prompt([
           {
             type: 'input',
             name: 'projectName',
             message: 'Please enter a valid project name:',
-            default: 'bna-app',
+            default: 'kynjal-app',
             validate: (input: string) => {
               const validation = validateProjectName(input);
               return (
@@ -100,20 +132,18 @@ export async function initCommand(
       }
     }
 
-    // Validate and sanitize project name
-    const nameValidation = validateProjectName(finalProjectName ?? 'bna');
+    const nameValidation = validateProjectName(finalProjectName ?? 'kynjal');
     if (!nameValidation.valid) {
       logger.error(nameValidation.message!);
       process.exit(1);
     }
 
-    const sanitizedName = sanitizeProjectName(finalProjectName ?? 'bna');
+    const sanitizedName = sanitizeProjectName(finalProjectName ?? 'kynjal');
     let projectPath: string;
 
     if (useCurrentDirectory) {
       projectPath = process.cwd();
 
-      // Check if current directory is empty or only contains safe files
       const files = fs.readdirSync(projectPath);
       const safeFiles = [
         '.git',
@@ -147,7 +177,6 @@ export async function initCommand(
     } else {
       projectPath = path.resolve(process.cwd(), sanitizedName);
 
-      // Validate project path
       const pathValidation = validateProjectPath(projectPath);
       if (!pathValidation.valid) {
         logger.error(pathValidation.message!);
@@ -155,7 +184,6 @@ export async function initCommand(
       }
     }
 
-    // Determine package manager based on CLI flags or invocation method
     let packageManager: PackageManager;
 
     if (options.npm) packageManager = 'npm';
@@ -163,33 +191,146 @@ export async function initCommand(
     else if (options.pnpm) packageManager = 'pnpm';
     else if (options.bun) packageManager = 'bun';
     else {
-      // Detect from how the CLI was invoked
       packageManager = detectPackageManagerFromInvocation();
       logger.info(`Detected package manager: ${packageManager}`);
     }
 
-    // Create project
     const spinner = ora('Creating your BNA project...').start();
 
     try {
-      // Copy template files
-      const templatePath = path.resolve(__dirname, '../../templates/start');
+      let templatePath = path.resolve(__dirname, '../../templates/start');
+      if (!fs.existsSync(templatePath)) {
+        templatePath = path.resolve(__dirname, '../templates/start');
+      }
       await copyTemplate(templatePath, projectPath);
 
-      // Update package.json
       await updatePackageJson(projectPath, sanitizedName);
 
-      // Update app.json
-      await updateAppJson(projectPath, sanitizedName);
+      await updateAppJson(
+        projectPath,
+        sanitizedName,
+        options.bundleIdentifier || `com.kynjal.${sanitizedName}`
+      );
 
       spinner.succeed('Project created successfully!');
 
-      // Install dependencies
       if (!options.skipInstall) {
         await installDependencies(projectPath, packageManager);
+
+        if (options.runPrebuild) {
+          const prebuildSpinner = ora('Running expo prebuild...').start();
+          try {
+            const { execSync } = await import('child_process');
+            const prebuildCommand = getExecCommand(
+              packageManager,
+              'expo prebuild --clean'
+            );
+
+            execSync(prebuildCommand, {
+              cwd: projectPath,
+              stdio: 'inherit',
+            });
+            prebuildSpinner.succeed('Prebuild completed successfully!');
+          } catch (error) {
+            prebuildSpinner.fail('Failed to run prebuild.');
+            logger.warn('You can run prebuild manually later.');
+            logger.debug(error as string);
+          }
+        }
       }
 
-      // Show success message
+      if (options.git) {
+        const { initGit, isGitInstalled } = await import('../utils/git.js');
+
+        if (isGitInstalled()) {
+          const gitSpinner = ora('Initializing git repository...').start();
+          const success = initGit(projectPath);
+
+          if (success) {
+            gitSpinner.succeed('Git repository initialized!');
+          } else {
+            gitSpinner.info('Skipped git initialization (already initialized or failed)');
+          }
+        }
+      }
+
+      const { configureEas } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'configureEas',
+          message: 'Would you like to configure EAS Build now? (eas build:configure)',
+          default: false,
+        },
+      ]);
+
+      if (configureEas) {
+        const easSpinner = ora('Configuring EAS Build...').start();
+        try {
+          const { execSync } = await import('child_process');
+          execSync('npx eas-cli build:configure', {
+            cwd: projectPath,
+            stdio: 'inherit'
+          });
+          easSpinner.succeed('EAS Build configured successfully!');
+        } catch (error) {
+            easSpinner.fail('Failed to configure EAS Build.');
+            logger.warn('You can run "eas build:configure" manually later.');
+        }
+      }
+
+      const { configureEasUpdates } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'configureEasUpdates',
+          message: 'Would you like to configure EAS Update? (eas update:configure)',
+          default: false,
+        },
+      ]);
+
+      if (configureEasUpdates) {
+        const easUpdateSpinner = ora('Configuring EAS Update...').start();
+        try {
+            const { execSync } = await import('child_process');
+            execSync('npx eas-cli update:configure', {
+                cwd: projectPath,
+                stdio: 'inherit'
+            });
+
+            // Post-configure logic for app.json to set strict updates policy
+            // Using logic similar to provided snippet but ensuring we use fs/path properly
+            const appJsonPath = path.join(projectPath, 'app.json');
+            const appJsonContent = fs.readFileSync(appJsonPath, 'utf-8');
+            const appJson = JSON.parse(appJsonContent);
+
+            if (!appJson.expo.updates) {
+                appJson.expo.updates = {};
+            }
+
+            const existingUpdates = appJson.expo.updates;
+
+            // Reconstruct object to enforce order
+            appJson.expo.updates = {
+                url: existingUpdates.url,
+                checkAutomatically: 'ON_LOAD',
+                fallbackToCacheTimeout: 0,
+            };
+
+            // Preserve extra EAS fields
+            Object.keys(existingUpdates).forEach(key => {
+                if (!['url', 'checkAutomatically', 'fallbackToCacheTimeout'].includes(key)) {
+                    appJson.expo.updates[key] = existingUpdates[key];
+                }
+            });
+
+            fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2), 'utf-8');
+
+            easUpdateSpinner.succeed('EAS Update configured successfully!');
+        } catch (error) {
+            easUpdateSpinner.fail('Failed to configure EAS Update.');
+            logger.warn('You can run "eas update:configure" manually later.');
+        }
+      }
+
       showSuccessMessage(
         sanitizedName,
         packageManager,
@@ -205,8 +346,6 @@ export async function initCommand(
     process.exit(1);
   }
 }
-
-
 
 function showSuccessMessage(
   projectName: string,

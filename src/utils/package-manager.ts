@@ -93,6 +93,22 @@ export function getRunCommand(
   }
 }
 
+export function getExecCommand(
+  packageManager: PackageManager,
+  script: string
+): string {
+  switch (packageManager) {
+    case 'yarn':
+      return `yarn ${script}`;
+    case 'pnpm':
+      return `pnpm exec ${script}`;
+    case 'bun':
+      return `bunx ${script}`;
+    default:
+      return `npx ${script}`;
+  }
+}
+
 export async function installDependencies(
   projectPath: string,
   packageManager: PackageManager

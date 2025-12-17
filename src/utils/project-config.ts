@@ -26,7 +26,8 @@ export async function updatePackageJson(
 
 export async function updateAppJson(
   projectPath: string,
-  projectName: string
+  projectName: string,
+  bundleIdentifier: string
 ): Promise<void> {
   const appJsonPath = path.join(projectPath, 'app.json');
 
@@ -38,6 +39,15 @@ export async function updateAppJson(
     appConfig.expo.name = projectName;
     appConfig.expo.slug = projectName;
     appConfig.expo.scheme = projectName;
+
+    // Update bundle identifier for iOS and Android
+    if (appConfig.expo.ios) {
+      appConfig.expo.ios.bundleIdentifier = bundleIdentifier;
+    }
+    if (appConfig.expo.android) {
+      // Android package names cannot contain hyphens
+      appConfig.expo.android.package = bundleIdentifier.replace(/-/g, '_');
+    }
 
     // Write the updated content back to the file
     await fs.writeJson(appJsonPath, appConfig, { spaces: 2 });
