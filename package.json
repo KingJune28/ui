@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "kynjal-ui",
+  "name": "kynjal-cli",
   "version": "2.0.6",
   "type": "module",
-  "description": "Kynjal UI - Expo React Native CLI, UI Components Library",
+  "description": "Kynjal CLI - Expo React Native CLI, UI Components Library",
   "main": "dist/index.js",
   "bin": {
     "kynjal": "bin/kynjal.js"
