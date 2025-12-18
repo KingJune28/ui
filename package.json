@@ -1,12 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "bna-ui",
+  "name": "kynjal-ui",
   "version": "2.0.6",
   "type": "module",
-  "description": "BNA UI - Expo React Native CLI, UI Components Library",
+  "description": "Kynjal UI - Expo React Native CLI, UI Components Library",
   "main": "dist/index.js",
   "bin": {
-    "bna-ui": "bin/bna-ui.js"
+    "kynjal": "bin/kynjal.js"
   },
   "scripts": {
     "build": "npm run clean && tsc && npm run copy-templates && npm run copy-registry",
