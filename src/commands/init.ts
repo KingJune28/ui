@@ -68,7 +68,7 @@ export async function initCommand(
           },
         },
       ]);
-      finalProjectName = answers.projectName;
+    finalProjectName = answers.projectName;
     }
 
     // Check if user wants to use current directory
@@ -239,20 +239,7 @@ export async function initCommand(
 
       }
 
-      if (options.git) {
-        const { initGit, isGitInstalled } = await import('../utils/git.js');
 
-        if (isGitInstalled()) {
-          const gitSpinner = ora('Initializing git repository...').start();
-          const success = initGit(projectPath);
-
-          if (success) {
-            gitSpinner.succeed('Git repository initialized!');
-          } else {
-            gitSpinner.info('Skipped git initialization (already initialized or failed)');
-          }
-        }
-      }
 
       const { configureEas } = await inquirer.prompt([
         {
@@ -328,9 +315,40 @@ export async function initCommand(
             fs.writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2), 'utf-8');
 
             easUpdateSpinner.succeed('EAS Update configured successfully!');
+
+            // Intelligent EAS Flow: If Build wasn't configured but Updates was, configure Build now.
+            // This ensures "eas build" works since the user has now linked the project to EAS.
+            if (!configureEas) {
+                 const easBuildSpinner = ora('Configuring EAS Build (required for Updates)...').start();
+                 try {
+                     execSync('npx eas-cli build:configure', {
+                         cwd: projectPath,
+                         stdio: 'inherit'
+                     });
+                     easBuildSpinner.succeed('EAS Build configured automatically!');
+                 } catch (buildError) {
+                     easBuildSpinner.fail('Failed to configure EAS Build automatically.');
+                     logger.warn('You should run "eas build:configure" manually.');
+                 }
+            }
         } catch (error) {
             easUpdateSpinner.fail('Failed to configure EAS Update.');
             logger.warn('You can run "eas update:configure" manually later.');
+        }
+      }
+
+      if (options.git) {
+        const { initGit, isGitInstalled } = await import('../utils/git.js');
+
+        if (isGitInstalled()) {
+          const gitSpinner = ora('Initializing git repository...').start();
+          const success = initGit(projectPath);
+
+          if (success) {
+            gitSpinner.succeed('Git repository initialized!');
+          } else {
+            gitSpinner.info('Skipped git initialization (already initialized or failed)');
+          }
         }
       }
 
