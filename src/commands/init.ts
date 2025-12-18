@@ -49,6 +49,7 @@ export async function initCommand(
     let finalProjectName = projectName;
     let useCurrentDirectory = false;
 
+    // Get project name if not provided
     if (!finalProjectName) {
       const answers = await inquirer.prompt([
         {
@@ -66,38 +67,8 @@ export async function initCommand(
             );
           },
         },
-        {
-          type: 'input',
-          name: 'bundleIdentifier',
-          message: 'What is your bundle identifier?',
-          default: (answers: any) => {
-            const name = sanitizeProjectName(answers.projectName || 'kynjal-app');
-            return `com.kynjal.${name}`;
-          },
-          validate: (input: string) => {
-            if (/^[a-zA-Z0-9._-]+$/.test(input)) {
-              return true;
-            }
-            return 'Invalid bundle identifier. Use alphanumeric characters, dots, hyphens, or underscores.';
-          },
-        },
-        {
-          type: 'confirm',
-          name: 'runPrebuild',
-          message: 'Do you want to run prebuild? (Generates native directories)',
-          default: false,
-        },
-        {
-          type: 'confirm',
-          name: 'git',
-          message: 'Do you want to initialize a git repository?',
-          default: true,
-        },
       ]);
       finalProjectName = answers.projectName;
-      options.bundleIdentifier = answers.bundleIdentifier;
-      options.runPrebuild = answers.runPrebuild;
-      options.git = answers.git;
     }
 
     // Check if user wants to use current directory
@@ -105,6 +76,7 @@ export async function initCommand(
       useCurrentDirectory = true;
       const currentDirName = path.basename(process.cwd());
 
+      // Validate current directory name as project name
       const nameValidation = validateProjectName(currentDirName);
       if (!nameValidation.valid) {
         logger.error(
@@ -112,6 +84,7 @@ export async function initCommand(
         );
         logger.error(nameValidation.message!);
 
+        // Ask for a different project name
         const answers = await inquirer.prompt([
           {
             type: 'input',
@@ -132,13 +105,59 @@ export async function initCommand(
       }
     }
 
+    // Validate and sanitize project name
+    const sanitizedName = sanitizeProjectName(finalProjectName ?? 'kynjal');
+
+    // Collect missing options
+    const questions: any[] = [];
+
+    if (!options.bundleIdentifier) {
+      questions.push({
+        type: 'input',
+        name: 'bundleIdentifier',
+        message: 'What is your bundle identifier?',
+        default: `com.kynjal.${sanitizedName}`,
+        validate: (input: string) => {
+          if (/^[a-zA-Z0-9._-]+$/.test(input)) {
+            return true;
+          }
+          return 'Invalid bundle identifier. Use alphanumeric characters, dots, hyphens, or underscores.';
+        },
+      });
+    }
+
+    if (options.runPrebuild === undefined) {
+      questions.push({
+        type: 'confirm',
+        name: 'runPrebuild',
+        message: 'Do you want to run prebuild? (Generates native directories)',
+        default: false,
+      });
+    }
+
+    if (options.git === undefined) {
+      questions.push({
+        type: 'confirm',
+        name: 'git',
+        message: 'Do you want to initialize a git repository?',
+        default: true,
+      });
+    }
+
+    if (questions.length > 0) {
+      const answers = await inquirer.prompt(questions);
+      if (answers.bundleIdentifier) options.bundleIdentifier = answers.bundleIdentifier;
+      if (answers.runPrebuild !== undefined) options.runPrebuild = answers.runPrebuild;
+      if (answers.git !== undefined) options.git = answers.git;
+    }
+
     const nameValidation = validateProjectName(finalProjectName ?? 'kynjal');
     if (!nameValidation.valid) {
       logger.error(nameValidation.message!);
       process.exit(1);
     }
 
-    const sanitizedName = sanitizeProjectName(finalProjectName ?? 'kynjal');
+
     let projectPath: string;
 
     if (useCurrentDirectory) {
@@ -217,26 +236,7 @@ export async function initCommand(
       if (!options.skipInstall) {
         await installDependencies(projectPath, packageManager);
 
-        if (options.runPrebuild) {
-          const prebuildSpinner = ora('Running expo prebuild...').start();
-          try {
-            const { execSync } = await import('child_process');
-            const prebuildCommand = getExecCommand(
-              packageManager,
-              'expo prebuild --clean'
-            );
 
-            execSync(prebuildCommand, {
-              cwd: projectPath,
-              stdio: 'inherit',
-            });
-            prebuildSpinner.succeed('Prebuild completed successfully!');
-          } catch (error) {
-            prebuildSpinner.fail('Failed to run prebuild.');
-            logger.warn('You can run prebuild manually later.');
-            logger.debug(error as string);
-          }
-        }
       }
 
       if (options.git) {
@@ -315,6 +315,9 @@ export async function initCommand(
                 fallbackToCacheTimeout: 0,
             };
 
+            // Set runtime version to fixed 1.0.0 as requested
+            appJson.expo.runtimeVersion = '1.0.0';
+
             // Preserve extra EAS fields
             Object.keys(existingUpdates).forEach(key => {
                 if (!['url', 'checkAutomatically', 'fallbackToCacheTimeout'].includes(key)) {
@@ -328,6 +331,31 @@ export async function initCommand(
         } catch (error) {
             easUpdateSpinner.fail('Failed to configure EAS Update.');
             logger.warn('You can run "eas update:configure" manually later.');
+        }
+      }
+
+      // Run prebuild if requested (after EAS configuration)
+      if (options.runPrebuild) {
+        // Only run prebuild if dependencies are installed or we are not skipping install
+        if (!options.skipInstall) {
+            const prebuildSpinner = ora('Running expo prebuild...').start();
+            try {
+              const { execSync } = await import('child_process');
+              const prebuildCommand = getExecCommand(
+                packageManager,
+                'expo prebuild --clean'
+              );
+
+              execSync(prebuildCommand, {
+                cwd: projectPath,
+                stdio: 'inherit',
+              });
+              prebuildSpinner.succeed('Prebuild completed successfully!');
+            } catch (error) {
+              prebuildSpinner.fail('Failed to run prebuild.');
+              logger.warn('You can run prebuild manually later.');
+              logger.debug(error as string);
+            }
         }
       }
 

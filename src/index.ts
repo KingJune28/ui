@@ -23,6 +23,10 @@ program
   .option('--pnpm', 'Use pnpm as package manager')
   .option('--bun', 'Use bun as package manager')
   .option('--skip-install', 'Skip package installation')
+  .option('--bundle-identifier <bundleIdentifier>', 'Bundle identifier for the app')
+  .option('--git', 'Initialize a git repository')
+  .option('--no-git', 'Skip git initialization')
+  .option('--run-prebuild', 'Run expo prebuild')
   .action(initCommand);
 
 program
