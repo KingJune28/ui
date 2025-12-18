@@ -214,7 +214,7 @@ export async function initCommand(
       logger.info(`Detected package manager: ${packageManager}`);
     }
 
-    const spinner = ora('Creating your BNA project...').start();
+    const spinner = ora('Creating your Kynjal project...').start();
 
     try {
       let templatePath = path.resolve(__dirname, '../../templates/start');
